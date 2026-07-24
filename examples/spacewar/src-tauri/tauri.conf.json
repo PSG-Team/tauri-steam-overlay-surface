@@ -1,0 +1,27 @@
+{
+  "productName": "Spacewar Overlay Example",
+  "version": "0.1.0",
+  "identifier": "com.psgstudios.steam-overlay-surface-example",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Spacewar Overlay Example",
+        "width": 1280,
+        "height": 720,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.ico"]
+  }
+}
