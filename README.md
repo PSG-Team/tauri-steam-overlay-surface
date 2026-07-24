@@ -205,6 +205,12 @@ this code, keep them:
 - **Semi-transparent overlay pixels** (Steam's dim layer) may blend slightly
   differently than native: Steam renders unpremultiplied alpha. Cosmetic;
   panels are opaque and unaffected.
+- **One click needed after alt-tab.** Alt-tab back into the game and the
+  Shift+Tab forwarder is deaf until the player clicks the page once —
+  Windows re-activates the native window without returning keyboard focus
+  to the webview. Do NOT try to fix this by calling `webview.set_focus()`
+  from the focus/foreground handlers: v0.1.1 shipped exactly that and it
+  killed Shift+Tab entirely, even on fresh boot (reverted in v0.1.2).
 - Verified on a real Steam-launched build (2026-07-24): open/close/alt-tab
   cycles, multi-resolution ladder (1920×1080 / 2560×1440 / 5120×1440, live
   switches, fullscreen↔windowed), OBS capture.
