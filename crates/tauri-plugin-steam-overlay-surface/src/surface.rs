@@ -144,8 +144,6 @@ pub(crate) fn spawn<R: Runtime>(main: Window<R>, config: Config) {
     // while the overlay is open (Steam owns the sheet in that state).
     {
         let ov = overlay.clone();
-        let handle = app.clone();
-        let main_label = config.main_window_label.clone();
         main.on_window_event(move |event| {
             if let tauri::WindowEvent::Focused(focused) = event {
                 if *focused {
@@ -161,17 +159,6 @@ pub(crate) fn spawn<R: Runtime>(main: Window<R>, config: Config) {
                         // back while the overlay is open it must accept input again or
                         // clicks fall through to the invisible game.
                         let _ = ov.set_ignore_cursor_events(false);
-                    } else {
-                        // Alt-tab back with the overlay closed: Windows re-activates
-                        // the native window, but WebView2 does not reliably regain
-                        // keyboard focus with it — keys (including the app's
-                        // Shift+Tab forwarder) go nowhere until the user clicks the
-                        // page. Hand focus to the webview explicitly.
-                        if let Some(m) = handle.get_window(&main_label) {
-                            for wv in m.webviews() {
-                                let _ = wv.set_focus();
-                            }
-                        }
                     }
                 } else if !STEAM_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
                     let _ = ov.hide();
@@ -189,7 +176,6 @@ pub(crate) fn spawn<R: Runtime>(main: Window<R>, config: Config) {
     #[cfg(windows)]
     {
         let ov = overlay.clone();
-        let mw = main.clone();
         let main_hwnd = main.hwnd().map(|h| h.0 as isize).unwrap_or(0);
         let decoy_hwnd = overlay.hwnd().map(|h| h.0 as isize).unwrap_or(0);
         let watchdog = std::thread::Builder::new()
@@ -214,17 +200,6 @@ pub(crate) fn spawn<R: Runtime>(main: Window<R>, config: Config) {
                         if !ours && visible && !overlay_active {
                             let _ = ov.set_ignore_cursor_events(true);
                             let _ = ov.hide();
-                        }
-                        // Alt-tab BACK with the overlay closed can re-activate the
-                        // DECOY (it held focus while the overlay was open) — a hidden,
-                        // webview-less window that eats every keypress, so Shift+Tab
-                        // dies until the user clicks the game. Hand focus back to the
-                        // game window and its webview.
-                        if ours && !overlay_active && fg_root == decoy_hwnd {
-                            let _ = mw.set_focus();
-                            for wv in mw.webviews() {
-                                let _ = wv.set_focus();
-                            }
                         }
                     }
                 }
