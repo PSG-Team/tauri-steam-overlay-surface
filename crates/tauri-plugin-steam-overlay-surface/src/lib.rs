@@ -131,7 +131,20 @@ impl Builder {
                 if window.label() == config.main_window_label
                     && !spawned.swap(true, Ordering::SeqCst)
                 {
-                    surface::spawn(window, config.clone());
+                    // Deadlock guard: this hook runs inside the main window's
+                    // creation path on the main thread — building the decoy
+                    // window re-entrantly here wedges the whole app ("Not
+                    // Responding", proven live on the Spacewar example).
+                    // Defer to a background thread: window creation from
+                    // non-main threads proxies through the event loop once it
+                    // pumps, which is the standard supported path.
+                    let config = config.clone();
+                    let spawn_thread = std::thread::Builder::new()
+                        .name("steam-overlay-spawn".into())
+                        .spawn(move || surface::spawn(window, config));
+                    if let Err(err) = spawn_thread {
+                        log::warn!("steam-overlay-surface: spawn thread failed to start ({err})");
+                    }
                 }
             })
             .build()
