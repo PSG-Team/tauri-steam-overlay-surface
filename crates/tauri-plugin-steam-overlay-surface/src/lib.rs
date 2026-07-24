@@ -200,6 +200,12 @@ pub fn on_overlay_activated<R: Runtime>(app: &AppHandle<R>, active: bool) {
         snapshot::clear_snapshot();
         if let Some(main) = app.get_window(&config.0.main_window_label) {
             let _ = main.set_focus();
+            // WebView2 does not reliably regain keyboard focus with the
+            // window — without this, keys (including the Shift+Tab
+            // forwarder) go nowhere until the user clicks the page.
+            for wv in main.webviews() {
+                let _ = wv.set_focus();
+            }
         }
     }
 }

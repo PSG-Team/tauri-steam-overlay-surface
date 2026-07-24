@@ -171,6 +171,13 @@ this code, keep them:
 11. **Keep geometry synced even while hidden** — the hidden branch skips
     presenting but still tracks main-window size/position, so the first
     frame after Shift+Tab isn't stretched from a stale size.
+12. **Refocus the WEBVIEW, not just the window, when the game comes back** —
+    alt-tab back can re-activate the decoy (it held focus while the overlay
+    was open), and even when the main window is activated WebView2 doesn't
+    reliably regain keyboard focus with it. Either way, keys (including the
+    Shift+Tab forwarder) go nowhere until the user clicks the page. On focus
+    regain with the overlay closed, and on overlay close, the plugin calls
+    `webview.set_focus()` explicitly.
 
 ## Capture / streaming notes (OBS)
 
