@@ -6,6 +6,13 @@ Make the Steam in-game overlay (Shift+Tab) work in [Tauri](https://tauri.app) ap
 [Spirefall](https://spirefall.com), a Tauri-shipped Steam game, being captured
 in OBS like any native title.
 
+**Works with any frontend — React, Vue, Svelte, vanilla, anything.** The
+plugin is pure Rust and ships no JavaScript package; nothing from any UI
+framework is bundled (the demo game happens to use Svelte, but that's the
+game, not the plugin). The only frontend integration is forwarding the
+Shift+Tab chord to Rust — six lines of vanilla `addEventListener` (see
+[Usage](#usage)), pasteable into a React `useEffect` or anywhere else.
+
 ## The problem
 
 Steam's overlay works by injecting `gameoverlayrenderer64.dll` into the game
