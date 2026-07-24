@@ -1,0 +1,22 @@
+[package]
+name = "tauri-plugin-steam-overlay-surface"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+license = "MIT"
+description = "Steam in-game overlay (Shift+Tab) support for Tauri apps via a transparent decoy swapchain window"
+repository = "https://github.com/PSG-Team/tauri-steam-overlay-surface"
+documentation = "https://docs.rs/tauri-plugin-steam-overlay-surface"
+readme = "../../README.md"
+keywords = ["tauri-plugin", "steam", "overlay", "steamworks", "gamedev"]
+categories = ["game-development", "gui"]
+
+[dependencies]
+log = "0.4"
+# "unstable" — raw (webview-less) windows for the overlay decoy surface.
+tauri = { version = "2", features = ["unstable"] }
+# 0.20 = the version proven against tauri 2 (raw-window-handle 0.6 match).
+wgpu = "0.20"
+
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
