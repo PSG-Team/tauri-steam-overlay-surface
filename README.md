@@ -55,7 +55,9 @@ of compositing onto black.
 # Cargo.toml — the plugin needs tauri's `unstable` feature (raw,
 # webview-less windows).
 tauri = { version = "2", features = ["unstable"] }
-tauri-plugin-steam-overlay-surface = "0.1"
+
+# crates.io publish is pending; depend on the tag for now:
+tauri-plugin-steam-overlay-surface = { git = "https://github.com/PSG-Team/tauri-steam-overlay-surface", tag = "v0.1.2" }
 ```
 
 ```rust
