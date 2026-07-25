@@ -1,5 +1,9 @@
 # tauri-plugin-steam-overlay-surface
 
+[![crates.io](https://img.shields.io/crates/v/tauri-plugin-steam-overlay-surface.svg)](https://crates.io/crates/tauri-plugin-steam-overlay-surface)
+[![docs.rs](https://docs.rs/tauri-plugin-steam-overlay-surface/badge.svg)](https://docs.rs/tauri-plugin-steam-overlay-surface)
+[![license](https://img.shields.io/crates/l/tauri-plugin-steam-overlay-surface.svg)](LICENSE)
+
 Make the Steam in-game overlay (Shift+Tab) work in [Tauri](https://tauri.app) apps.
 
 [Demo video](https://youtu.be/vc39LuDtJtM) — the overlay opening over
@@ -56,8 +60,7 @@ of compositing onto black.
 # webview-less windows).
 tauri = { version = "2", features = ["unstable"] }
 
-# crates.io publish is pending; depend on the tag for now:
-tauri-plugin-steam-overlay-surface = { git = "https://github.com/PSG-Team/tauri-steam-overlay-surface", tag = "v0.1.2" }
+tauri-plugin-steam-overlay-surface = "0.1"
 ```
 
 ```rust
