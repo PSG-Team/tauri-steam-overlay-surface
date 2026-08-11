@@ -89,6 +89,19 @@ fn main() {
           tauri_plugin_steam_overlay_surface::on_overlay_activated(&handle, ev.active);
         });
         std::mem::forget(cb); // keep registered for the app's lifetime
+
+        // 4. Hook Steam screenshots (F12) — without this they capture
+        //    nothing; see "Steam screenshots (F12)" below.
+        client.screenshots().hook_screenshots(true);
+        let handle = app.handle().clone();
+        let shot_client = client.clone();
+        let cb = client.register_callback(move |_: steamworks::screenshots::ScreenshotRequested| {
+          if let Some(shot) = tauri_plugin_steam_overlay_surface::capture_screenshot_png(&handle) {
+            let _ = shot_client.screenshots().add_screenshot_to_library(
+              &shot.path, None, shot.width as i32, shot.height as i32);
+          }
+        });
+        std::mem::forget(cb);
       }
       Ok(())
     })
@@ -124,8 +137,36 @@ Steamworks' `is_overlay_enabled()` it makes a good settings/QA readout
 ("Shift+Tab should visibly work").
 
 The plugin deliberately has **no `steamworks` dependency**: your app owns
-Steam init and the callback pump, and forwards the one callback the plugin
+Steam init and the callback pump, and forwards the callbacks the plugin
 needs. No version coupling with your Steamworks bindings.
+
+## Steam screenshots (F12)
+
+Steam's default F12 handler lives in the same injected DLL as the overlay:
+it copies the hooked swapchain's backbuffer at Present time. With the decoy
+architecture that backbuffer **never contains your game**:
+
+- Overlay closed: the plugin presents nothing at all (pausing while hidden
+  is a hard invariant — see below), so F12 has no frame to grab and silently
+  does nothing.
+- Overlay open: the backbuffer holds the frozen backdrop snapshot from the
+  moment the overlay activated — F12 "works" but saves a stale frame.
+
+This is architecture-inherent, not a Windows-version issue (reported on
+Windows 10, reproduced on Windows 11).
+
+The fix is Steamworks' own escape hatch for engines that composite
+elsewhere: `ISteamScreenshots::HookScreenshots(true)`. Steam then fires
+`ScreenshotRequested` on F12 instead of touching the backbuffer, and your
+app hands it a live frame. The plugin provides the capture —
+`capture_screenshot_png` grabs the main window's real composited content
+(`PrintWindow`, same path as the backdrop snapshot, works from the callback
+pump thread), writes a temp PNG, and returns its path and dimensions for
+`AddScreenshotToLibrary`. Wiring is step 4 of [Usage](#usage). Temp files
+are cleaned up automatically on subsequent captures.
+
+Screenshots taken this way are live regardless of overlay state, and match
+native-title behavior (Steam UI is not in the shot).
 
 ## Try it (Spacewar example)
 
@@ -217,6 +258,10 @@ this code, keep them:
 - **Semi-transparent overlay pixels** (Steam's dim layer) may blend slightly
   differently than native: Steam renders unpremultiplied alpha. Cosmetic;
   panels are opaque and unaffected.
+- **F12 screenshots require the hooked-screenshots wiring** (step 4 of
+  [Usage](#usage)). Without it, Steam grabs the decoy's backbuffer, which
+  never contains the game — no screenshot with the overlay closed, a stale
+  frozen frame with it open. See [Steam screenshots (F12)](#steam-screenshots-f12).
 - **One click needed after alt-tab.** Alt-tab back into the game and the
   Shift+Tab forwarder is deaf until the player clicks the page once —
   Windows re-activates the native window without returning keyboard focus

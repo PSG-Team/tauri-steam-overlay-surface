@@ -95,28 +95,25 @@ pub(crate) fn take_pending() -> Option<Option<Snapshot>> {
     }
 }
 
-/// Grab the main window's client area (physical pixels) via PrintWindow
-/// with PW_RENDERFULLCONTENT — renders the window's own DWM-composited
-/// content (WebView2 output included), so the capture is immune to whatever
-/// overlaps the game at that instant (the decoy sits over the game at boot;
-/// a screen-rect BitBlt would capture it instead of the game). Called from
-/// GameOverlayActivated(true) BEFORE the sheet is shown; the render thread
-/// paints the result as the backdrop so Steam dims a "game frame" instead
-/// of transparent black.
+/// Grab a window's client area (physical pixels) via PrintWindow with
+/// PW_RENDERFULLCONTENT — renders the window's own DWM-composited content
+/// (WebView2 output included), so the capture is immune to whatever overlaps
+/// the window at that instant (a screen-rect BitBlt would capture the decoy
+/// sheet instead of the game). Returns tightly packed BGRA rows, top-down.
 #[cfg(windows)]
-pub(crate) fn capture_main_snapshot<R: Runtime>(main: &Window<R>) {
-    let (Ok(hwnd), Ok(size)) = (main.hwnd(), main.inner_size()) else {
-        return;
+pub(crate) fn capture_window_bgra<R: Runtime>(window: &Window<R>) -> Option<Snapshot> {
+    let (Ok(hwnd), Ok(size)) = (window.hwnd(), window.inner_size()) else {
+        return None;
     };
     if size.width == 0 || size.height == 0 {
-        return;
+        return None;
     }
     let (w, h) = (size.width as i32, size.height as i32);
 
     unsafe {
         let screen = GetDC(0);
         if screen == 0 {
-            return;
+            return None;
         }
         let memdc = CreateCompatibleDC(screen);
         let bmp = CreateCompatibleBitmap(screen, w, h);
@@ -152,24 +149,35 @@ pub(crate) fn capture_main_snapshot<R: Runtime>(main: &Window<R>) {
         }
         ReleaseDC(0, screen);
 
-        if ok {
-            let mut slot = SNAPSHOT.lock().unwrap();
-            slot.data = Some(Snapshot {
-                width: size.width,
-                height: size.height,
-                bgra,
-            });
-            slot.dirty = true;
-        } else {
-            log::warn!(
-                "steam-overlay-surface: snapshot capture failed; backdrop stays transparent"
-            );
-        }
+        ok.then_some(Snapshot {
+            width: size.width,
+            height: size.height,
+            bgra,
+        })
     }
 }
 
 #[cfg(not(windows))]
-pub(crate) fn capture_main_snapshot<R: Runtime>(_main: &Window<R>) {}
+pub(crate) fn capture_window_bgra<R: Runtime>(_window: &Window<R>) -> Option<Snapshot> {
+    None
+}
+
+/// Capture the main window for the frozen backdrop. Called from
+/// GameOverlayActivated(true) BEFORE the sheet is shown; the render thread
+/// paints the result so Steam dims a "game frame" instead of transparent
+/// black.
+pub(crate) fn capture_main_snapshot<R: Runtime>(main: &Window<R>) {
+    match capture_window_bgra(main) {
+        Some(snap) => {
+            let mut slot = SNAPSHOT.lock().unwrap();
+            slot.data = Some(snap);
+            slot.dirty = true;
+        }
+        None => log::warn!(
+            "steam-overlay-surface: snapshot capture failed; backdrop stays transparent"
+        ),
+    }
+}
 
 /// Drop the frozen backdrop (overlay closed) — the sheet goes back to
 /// transparent clears next time it's shown.

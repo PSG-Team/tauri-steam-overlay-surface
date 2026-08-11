@@ -81,6 +81,33 @@ fn main() {
                 });
                 // Registered for the app's entire lifetime (dropping unregisters).
                 std::mem::forget(cb);
+
+                // Hooked screenshots: Steam's default F12 grabs the hooked
+                // swapchain's backbuffer, which never contains the game (the
+                // decoy presents nothing while the overlay is closed). Hook
+                // them and hand Steam a live PrintWindow frame instead.
+                client.screenshots().hook_screenshots(true);
+                let handle = app.handle().clone();
+                let shot_client = client.clone();
+                let cb = client.register_callback(
+                    move |_: steamworks::screenshots::ScreenshotRequested| {
+                        let Some(shot) =
+                            tauri_plugin_steam_overlay_surface::capture_screenshot_png(&handle)
+                        else {
+                            log::warn!("screenshot capture failed; F12 dropped");
+                            return;
+                        };
+                        if let Err(err) = shot_client.screenshots().add_screenshot_to_library(
+                            &shot.path,
+                            None,
+                            shot.width as i32,
+                            shot.height as i32,
+                        ) {
+                            log::warn!("add_screenshot_to_library failed ({err})");
+                        }
+                    },
+                );
+                std::mem::forget(cb);
             }
             Ok(())
         })

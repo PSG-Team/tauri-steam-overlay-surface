@@ -34,6 +34,20 @@
 //!         },
 //!       );
 //!       std::mem::forget(cb); // keep registered for the app's lifetime
+//!
+//!       // 4. Hook Steam screenshots: the decoy's backbuffer never contains
+//!       //    the game, so Steam's default F12 grab captures nothing.
+//!       //    Provide live frames instead (see capture_screenshot_png).
+//!       client.screenshots().hook_screenshots(true);
+//!       let handle = app.handle().clone();
+//!       let shot_client = client.clone();
+//!       let cb = client.register_callback(move |_: steamworks::screenshots::ScreenshotRequested| {
+//!         if let Some(shot) = tauri_plugin_steam_overlay_surface::capture_screenshot_png(&handle) {
+//!           let _ = shot_client.screenshots().add_screenshot_to_library(
+//!             &shot.path, None, shot.width as i32, shot.height as i32);
+//!         }
+//!       });
+//!       std::mem::forget(cb);
 //!     }
 //!     Ok(())
 //!   })
@@ -49,6 +63,7 @@
 //! Requires tauri's `unstable` feature (raw, webview-less windows).
 //! Windows-only today; on other platforms every call is a graceful no-op.
 
+mod screenshot;
 mod snapshot;
 mod surface;
 
@@ -58,6 +73,7 @@ use std::sync::Arc;
 use tauri::plugin::{Builder as PluginBuilder, TauriPlugin};
 use tauri::{AppHandle, Manager, Runtime};
 
+pub use screenshot::{capture_screenshot_png, CapturedScreenshot};
 pub use surface::OVERLAY_LABEL;
 
 /// Plugin configuration. Construct via [`Builder`].
