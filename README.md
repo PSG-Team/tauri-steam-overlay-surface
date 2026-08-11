@@ -4,36 +4,36 @@
 [![docs.rs](https://docs.rs/tauri-plugin-steam-overlay-surface/badge.svg)](https://docs.rs/tauri-plugin-steam-overlay-surface)
 [![license](https://img.shields.io/crates/l/tauri-plugin-steam-overlay-surface.svg)](LICENSE)
 
-Make the Steam in-game overlay (Shift+Tab) work in [Tauri](https://tauri.app) apps.
+Makes the Steam in-game overlay (Shift+Tab) and Steam screenshots (F12) work
+in [Tauri](https://tauri.app) apps.
 
-[Demo video](https://youtu.be/vc39LuDtJtM) — the overlay opening over
-[Spirefall](https://spirefall.com), a Tauri-shipped Steam game, being captured
+[Demo video](https://youtu.be/vc39LuDtJtM): the overlay opening over
+[Spirefall](https://spirefall.com), a Steam game built with Tauri, captured
 in OBS like any native title.
 
-**Works with any frontend — React, Vue, Svelte, vanilla, anything.** The
-plugin is pure Rust and ships no JavaScript package; nothing from any UI
-framework is bundled (the demo game happens to use Svelte, but that's the
-game, not the plugin). The only frontend integration is forwarding the
-Shift+Tab chord to Rust — six lines of vanilla `addEventListener` (see
-[Usage](#usage)), pasteable into a React `useEffect` or anywhere else.
+Works with any frontend (React, Vue, Svelte, vanilla). The plugin is pure
+Rust and ships no JavaScript package. The only frontend code you need is a
+small keydown listener that forwards Shift+Tab to Rust (see
+[Usage](#usage)).
 
-## The problem
+## Why the overlay doesn't work in Tauri
 
-Steam's overlay works by injecting `gameoverlayrenderer64.dll` into the game
-process and hooking the graphics API's Present call (D3D/Vulkan/GL). A Tauri
-app never creates a swapchain in its own process — WebView2 renders in
-separate `msedgewebview2.exe` processes and composites via DWM — so the hook
-finds nothing and Shift+Tab is a no-op. This is the norm for webview-shell
-games, and the reason Electron games need `--in-process-gpu`.
+Steam shows its overlay by injecting `gameoverlayrenderer64.dll` into the
+game process and hooking the graphics API's Present call (D3D/Vulkan/GL). A
+Tauri app never presents frames from its own process: WebView2 renders in
+separate `msedgewebview2.exe` processes and Windows composites the result.
+Steam's hook finds nothing to attach to, so Shift+Tab does nothing. All
+webview-based games have this problem; it's why Electron games need
+`--in-process-gpu`.
 
-## The mechanism
+## How the plugin fixes it
 
-This plugin gives Steam a render target: a **decoy swapchain** on a
-transparent, click-through, borderless window that exactly covers your main
-window. A dedicated thread presents empty (fully transparent) frames at vsync
-via [wgpu](https://wgpu.rs). Steam's injected layer composites the overlay UI,
-notifications, and toasts into those frames at Present time — the game stays
-visible through every untouched pixel.
+The plugin gives Steam something to hook: a transparent, click-through,
+borderless "decoy" window that exactly covers your main window, with a real
+swapchain presenting empty frames at vsync via [wgpu](https://wgpu.rs).
+Steam's injected DLL draws the overlay UI, notifications, and toasts into
+those frames. Every pixel Steam doesn't touch stays transparent, so your
+game shows through.
 
 ```
 ┌────────────────────────── game process ──────────────────────────┐
@@ -48,26 +48,28 @@ visible through every untouched pixel.
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-While the overlay is open, the plugin also paints a frozen snapshot of your
-game (captured via `PrintWindow` the instant the overlay activated) behind
-Steam's UI, so Steam dims a "game frame" exactly like a native title instead
-of compositing onto black.
+While the overlay is open, the plugin also draws a frozen screenshot of your
+game (taken with `PrintWindow` the moment the overlay opened) behind Steam's
+UI. Steam then dims a game frame the way it does for native titles, instead
+of dimming black.
 
-## Usage
+## Installation
 
 ```toml
-# Cargo.toml — the plugin needs tauri's `unstable` feature (raw,
-# webview-less windows).
+# Cargo.toml — the plugin needs tauri's `unstable` feature
+# (windows without a webview).
 tauri = { version = "2", features = ["unstable"] }
 
 tauri-plugin-steam-overlay-surface = "0.1"
 ```
 
+## Usage
+
 ```rust
 fn main() {
   // 1. SteamAPI_Init BEFORE building the Tauri app: the injected DLL must
-  //    be resident before the plugin creates its wgpu device, or the
-  //    Present hook misses the swapchain. Do not reorder.
+  //    be loaded before the plugin creates its wgpu device, or the Present
+  //    hook misses the swapchain. Do not reorder.
   let steam = steamworks::Client::init_app(YOUR_APP_ID).ok();
   if let Some(client) = &steam {
     let pump = client.clone();
@@ -81,17 +83,17 @@ fn main() {
     // 2. The plugin spawns the decoy surface once your main window exists.
     .plugin(tauri_plugin_steam_overlay_surface::init())
     .setup(move |app| {
-      // 3. Forward Steam's GameOverlayActivated callback — the plugin
-      //    hands input to the overlay and back to your game.
       if let Some(client) = &steam {
+        // 3. Forward Steam's GameOverlayActivated callback. The plugin
+        //    hands input to the overlay and back to your game.
         let handle = app.handle().clone();
         let cb = client.register_callback(move |ev: steamworks::GameOverlayActivated| {
           tauri_plugin_steam_overlay_surface::on_overlay_activated(&handle, ev.active);
         });
         std::mem::forget(cb); // keep registered for the app's lifetime
 
-        // 4. Hook Steam screenshots (F12) — without this they capture
-        //    nothing; see "Steam screenshots (F12)" below.
+        // 4. Hook Steam screenshots. Without this, F12 captures nothing —
+        //    see "Steam screenshots (F12)" below.
         client.screenshots().hook_screenshots(true);
         let handle = app.handle().clone();
         let shot_client = client.clone();
@@ -110,7 +112,7 @@ fn main() {
 }
 ```
 
-One more piece belongs in your **frontend**: the Shift+Tab chord lands in the
+One piece belongs in your **frontend**: the Shift+Tab chord lands in the
 webview process, which Steam's input hooks never see. Forward it:
 
 ```js
@@ -122,7 +124,7 @@ window.addEventListener("keydown", (e) => {
 });
 ```
 
-Configuration via the builder:
+### Configuration
 
 ```rust
 tauri_plugin_steam_overlay_surface::Builder::new()
@@ -132,41 +134,35 @@ tauri_plugin_steam_overlay_surface::Builder::new()
   .build()
 ```
 
-`surface_active()` reports whether the decoy is presenting — combined with
+`surface_active()` reports whether the decoy is presenting. Combined with
 Steamworks' `is_overlay_enabled()` it makes a good settings/QA readout
 ("Shift+Tab should visibly work").
 
-The plugin deliberately has **no `steamworks` dependency**: your app owns
+The plugin has **no `steamworks` dependency** on purpose: your app owns
 Steam init and the callback pump, and forwards the callbacks the plugin
 needs. No version coupling with your Steamworks bindings.
 
 ## Steam screenshots (F12)
 
-Steam's default F12 handler lives in the same injected DLL as the overlay:
-it copies the hooked swapchain's backbuffer at Present time. With the decoy
-architecture that backbuffer **never contains your game**:
+Out of the box, F12 does nothing while the overlay is closed, and saves a
+stale frame while it's open. Steam's screenshot handler copies the hooked
+swapchain's backbuffer, and here that backbuffer never contains your game:
+with the overlay closed the plugin doesn't present at all, and with it open
+the buffer holds the frozen backdrop snapshot. This is a consequence of the
+decoy design and behaves the same on every Windows version.
 
-- Overlay closed: the plugin presents nothing at all (pausing while hidden
-  is a hard invariant — see below), so F12 has no frame to grab and silently
-  does nothing.
-- Overlay open: the backbuffer holds the frozen backdrop snapshot from the
-  moment the overlay activated — F12 "works" but saves a stale frame.
+The fix is Steam's built-in alternative for games like this:
+`ISteamScreenshots::HookScreenshots(true)`. Steam then sends the game a
+`ScreenshotRequested` callback on F12 instead of reading the backbuffer, and
+the game supplies the image. The plugin's `capture_screenshot_png` takes a
+live capture of your main window (`PrintWindow`, same mechanism as the
+backdrop snapshot, safe to call from the callback pump thread), writes it to
+a temp PNG, and returns the path and dimensions for
+`add_screenshot_to_library`. Step 4 of [Usage](#usage) wires it up; old temp
+files are cleaned up on later captures.
 
-This is architecture-inherent, not a Windows-version issue (reported on
-Windows 10, reproduced on Windows 11).
-
-The fix is Steamworks' own escape hatch for engines that composite
-elsewhere: `ISteamScreenshots::HookScreenshots(true)`. Steam then fires
-`ScreenshotRequested` on F12 instead of touching the backbuffer, and your
-app hands it a live frame. The plugin provides the capture —
-`capture_screenshot_png` grabs the main window's real composited content
-(`PrintWindow`, same path as the backdrop snapshot, works from the callback
-pump thread), writes a temp PNG, and returns its path and dimensions for
-`AddScreenshotToLibrary`. Wiring is step 4 of [Usage](#usage). Temp files
-are cleaned up automatically on subsequent captures.
-
-Screenshots taken this way are live regardless of overlay state, and match
-native-title behavior (Steam UI is not in the shot).
+Screenshots taken this way are live in every state and, like native games,
+don't include the Steam UI in the shot.
 
 ## Try it (Spacewar example)
 
@@ -179,101 +175,100 @@ cargo run -p spacewar-overlay-example
 ```
 
 The example vendors `steam_api64.dll` (Valve's redistributable, from the
-Steamworks SDK `redistributable_bin/`) and copies it next to the exe at build
-time — steamworks-rs loads it dynamically at runtime.
+Steamworks SDK `redistributable_bin/`) and copies it next to the exe at
+build time. steamworks-rs loads it dynamically at runtime.
 
-## Hard-won invariants
+## Implementation notes
 
-Every one of these was learned from a live failure. If you fork or vendor
-this code, keep them:
+Every rule below exists because breaking it caused a real failure. If you
+fork or vendor this code, keep them:
 
-1. **`SteamAPI_Init` before wgpu device creation** — the injected DLL hooks
+1. **`SteamAPI_Init` before wgpu device creation.** The injected DLL hooks
    device/swapchain creation. Init Steam before `tauri::Builder::run`.
 2. **Size the window before creating the swapchain, and sync against the
-   overlay's ACTUAL size** — the window is born at Tauri's 800×600 default;
-   Vulkan clamps the swapchain extent to the real window size. Get it wrong
-   and Steam renders the entire overlay into a corner.
-3. **Never `always_on_top`** — owned windows already float above their owner
-   and *only* their owner. Always-on-top floated above every app and ate
-   clicks into other apps after alt-tab while the overlay was open.
-4. **The sheet is visible ONLY while the overlay is open** (plus the boot
+   overlay window's actual size.** The window is born at Tauri's 800×600
+   default and Vulkan clamps the swapchain extent to the real window size.
+   Get it wrong and Steam renders the entire overlay into a corner.
+3. **Never `always_on_top`.** Owned windows already float above their owner
+   and only their owner. Always-on-top floated above every app and ate
+   clicks meant for other apps after alt-tab while the overlay was open.
+4. **The sheet is visible only while the overlay is open** (plus the boot
    window before first activation). After the first activation Steam's hook
    paints opaque frames into every present, so a visible decoy with the
    overlay closed is a solid black sheet over the game.
-5. **Return focus to the main window when the overlay closes** — otherwise
+5. **Return focus to the main window when the overlay closes**, otherwise
    the webview goes deaf (keyboard stays on the decoy window).
-6. **Kill switch** — ~120 consecutive failed frames disables the surface
-   (black-screen guard). No transparent composite-alpha mode ⇒ abort before
-   presenting anything (a black sheet over the game is worse than no
-   overlay).
-7. **Poll `GetForegroundWindow`; never trust decoy focus events** — raw
-   decoy `Focused` events simply never fire (tao). A watchdog thread polls
+6. **Kill switch:** ~120 consecutive failed frames disables the surface
+   (black-screen guard). If the surface offers no transparent
+   composite-alpha mode, abort before presenting anything; a black sheet
+   over the game is worse than no overlay.
+7. **Poll `GetForegroundWindow`; don't trust decoy focus events.** `Focused`
+   events on the raw decoy window never fire (tao). A watchdog thread polls
    the foreground window and hides the sheet when neither of our windows is
-   foreground — but ONLY while the overlay is closed: on activation Steam's
+   foreground — but only while the overlay is closed: on activation Steam's
    own input window takes the foreground, and treating that as an alt-tab
    caused a show/hide fight that locked the game out.
-8. **Recreate the swapchain on every hide→show transition** — Windows can
+8. **Recreate the swapchain on every hide→show transition.** Windows can
    keep the last composited frame (Steam's opaque overlay sheet) glued to a
-   re-shown window; transparent clears never reached the screen.
-9. **Restore cursor events whenever the sheet re-shows mid-overlay** — a
+   re-shown window, and transparent clears never reach the screen.
+9. **Restore cursor events whenever the sheet re-shows mid-overlay.** A
    watchdog hide sets click-through; re-showing without accepting cursor
    events sends clicks through the invisible overlay into the game
    underneath.
-10. **Pause presenting while hidden** — a Fifo present against an occluded
+10. **Pause presenting while hidden.** A Fifo present against an occluded
     window can block inside the driver indefinitely.
-11. **Keep geometry synced even while hidden** — the hidden branch skips
+11. **Keep geometry synced even while hidden.** The hidden branch skips
     presenting but still tracks main-window size/position, so the first
     frame after Shift+Tab isn't stretched from a stale size.
 
-## Capture / streaming notes (OBS)
+## OBS / capture notes
 
-- **No display affinity on the decoy — don't add it.**
-  `WDA_EXCLUDEFROMCAPTURE` renders the excluded window as an OPAQUE BLACK
-  sheet (not removed) in the capture paths OBS and screenshot tools actually
-  use (DXGI duplication, WGC). Without it, captures show game + overlay
-  exactly like a native title.
-- The decoy carries `WS_EX_TOOLWINDOW`, keeping it out of OBS's window picker
-  and auto-matching (OBS re-matches sources by exe+class on process restart
-  and can latch onto the decoy). tao rewrites the extended style from cached
-  flags on show/style changes, so the plugin re-asserts the bit every render
-  iteration — a one-shot set does not survive.
+- **Don't add display affinity to the decoy.** `WDA_EXCLUDEFROMCAPTURE`
+  renders the excluded window as an opaque black sheet (not removed) in the
+  capture paths OBS and screenshot tools actually use (DXGI duplication,
+  WGC). Without it, captures show game + overlay like a native title.
+- The decoy carries `WS_EX_TOOLWINDOW`, keeping it out of OBS's window
+  picker and auto-matching (OBS re-matches sources by exe+class on process
+  restart and can latch onto the decoy). tao rewrites the extended style
+  from cached flags on show/style changes, so the plugin re-asserts the bit
+  every render iteration; setting it once does not survive.
 - OBS's capture method must be **WGC** ("Windows 10 1903 and up", or
   Automatic on OBS 28+). The legacy BitBlt method shows black for
-  hardware-accelerated WebView2 content — true for Chrome/Electron apps
-  generally, not a plugin bug.
+  hardware-accelerated WebView2 content. That's true for Chrome/Electron
+  apps in general, not a plugin bug.
 - The snapshot backdrop uses `PrintWindow(PW_CLIENTONLY |
-  PW_RENDERFULLCONTENT)`, not a screen-rect BitBlt — it renders the window's
-  own composited content, immune to whatever overlaps the game at capture
-  time. `PW_RENDERFULLCONTENT` is undocumented but load-bearing: without it,
-  accelerated windows print black.
+  PW_RENDERFULLCONTENT)`, not a screen-rect BitBlt: it renders the window's
+  own composited content, unaffected by whatever overlaps the game at
+  capture time. `PW_RENDERFULLCONTENT` is undocumented but required;
+  without it, accelerated windows print black.
 
 ## Caveats and status
 
-- **Windows only** for now (the demo shipped Windows-only). On other
-  platforms every call is a graceful no-op. The approach should translate —
-  PRs welcome.
-- **Alpha mode `Inherit`** (what Vulkan reports on Windows): transparency is
-  platform-defined per spec. Works in practice; `WGPU_BACKEND=dx12|vulkan|gl`
+- **Windows only** for now. On other platforms every call is a graceful
+  no-op. The approach should translate; PRs welcome.
+- **Alpha mode `Inherit`** (what Vulkan reports on Windows): transparency
+  is platform-defined per spec. Works in practice. `WGPU_BACKEND=dx12|vulkan|gl`
   forces a backend for experiments without a rebuild.
 - **Semi-transparent overlay pixels** (Steam's dim layer) may blend slightly
-  differently than native: Steam renders unpremultiplied alpha. Cosmetic;
-  panels are opaque and unaffected.
-- **F12 screenshots require the hooked-screenshots wiring** (step 4 of
-  [Usage](#usage)). Without it, Steam grabs the decoy's backbuffer, which
-  never contains the game — no screenshot with the overlay closed, a stale
+  differently than native, since Steam renders unpremultiplied alpha.
+  Cosmetic; panels are opaque and unaffected.
+- **F12 screenshots need the hooked-screenshots wiring** (step 4 of
+  [Usage](#usage)). Without it, Steam reads the decoy's backbuffer, which
+  never contains the game: no screenshot with the overlay closed, a stale
   frozen frame with it open. See [Steam screenshots (F12)](#steam-screenshots-f12).
-- **One click needed after alt-tab.** Alt-tab back into the game and the
-  Shift+Tab forwarder is deaf until the player clicks the page once —
+- **One click needed after alt-tab.** After alt-tabbing back into the game,
+  the Shift+Tab forwarder is deaf until the player clicks the page once.
   Windows re-activates the native window without returning keyboard focus
-  to the webview. Do NOT try to fix this by calling `webview.set_focus()`
+  to the webview. Don't try to fix this by calling `webview.set_focus()`
   from the focus/foreground handlers: v0.1.1 shipped exactly that and it
-  killed Shift+Tab entirely, even on fresh boot (reverted in v0.1.2).
+  broke Shift+Tab entirely, even on fresh boot (reverted in v0.1.2).
 - Verified on a real Steam-launched build (2026-07-24): open/close/alt-tab
   cycles, multi-resolution ladder (1920×1080 / 2560×1440 / 5120×1440, live
   switches, fullscreen↔windowed), OBS capture.
-- Steam persists overlay panel positions per-game in pixels — after
+- Steam stores overlay panel positions per game in pixels, so after
   shrinking the surface (e.g. ultrawide → windowed) a panel can sit
-  offscreen. Steam-side behavior; re-summon it via the overlay toolbar.
+  offscreen. That's Steam-side behavior; re-summon the panel via the
+  overlay toolbar.
 
 ## Credits
 
