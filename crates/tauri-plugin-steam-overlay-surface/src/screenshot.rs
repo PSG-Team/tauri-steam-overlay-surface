@@ -78,6 +78,10 @@ pub fn capture_screenshot_png<R: Runtime>(app: &AppHandle<R>) -> Option<Captured
     let mut encoder = png::Encoder::new(BufWriter::new(file), snap.width, snap.height);
     encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
+    // Fast compression: the file is a throwaway handoff (Steam re-encodes
+    // to JPG for its library), and encode time delays Steam's "screenshot
+    // saved" toast — trade file size for latency.
+    encoder.set_compression(png::Compression::Fast);
     let write = encoder
         .write_header()
         .and_then(|mut w| w.write_image_data(&rgb));

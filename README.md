@@ -180,10 +180,16 @@ shows the working shape: one shared capture function, called from both the
 callback and the forwarded command.
 
 Screenshots taken this way are live in every state and, like native games,
-don't include the Steam UI in the shot. One limitation: if the player
-rebinds Steam's screenshot key, the frontend forward still only catches F12
-(Steamworks has no API to query the binding). The rebound key keeps working
-while the overlay is open.
+don't include the Steam UI in the shot. Two things to know:
+
+- **Provide your own capture feedback** (a flash or shutter sound). With
+  hooked screenshots Steam plays no shutter, and its "screenshot saved"
+  toast only appears after it has processed the file — a few seconds. The
+  library entry itself registers immediately. Valve's docs expect hooked
+  games to supply their own feedback.
+- If the player rebinds Steam's screenshot key, the frontend forward still
+  only catches F12 (Steamworks has no API to query the binding). The
+  rebound key keeps working while the overlay is open.
 
 ## Try it (Spacewar example)
 
