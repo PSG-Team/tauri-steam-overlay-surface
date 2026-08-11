@@ -123,7 +123,8 @@ window.addEventListener("keydown", (e) => {
     invoke("activate_overlay");    // your command calling activate_game_overlay("")
   } else if (e.key === "F12") {
     e.preventDefault();
-    invoke("trigger_screenshot");  // your command calling screenshots().trigger_screenshot()
+    invoke("trigger_screenshot");  // your command: capture_screenshot_png +
+                                   // add_screenshot_to_library (see below)
   }
 });
 ```
@@ -170,9 +171,13 @@ Old temp files are cleaned up on later captures.
 [Usage](#usage)): F12 has the same routing problem as Shift+Tab — it lands
 in the webview process, so Steam's input hook only sees it while the overlay
 is open (the decoy window holds keyboard focus then). With the overlay
-closed, F12 must be forwarded to a command that calls
-`screenshots().trigger_screenshot()`, which fires the same
-`ScreenshotRequested` callback a native F12 would.
+closed, forward F12 to a command that runs the same capture + library-add
+code your `ScreenshotRequested` handler runs. Do **not** route through
+`ISteamScreenshots::TriggerScreenshot` instead: with hooking enabled it
+never delivers a `ScreenshotRequested` callback (verified live against
+Spacewar, 2026-08-11) — the key press just vanishes. The Spacewar example
+shows the working shape: one shared capture function, called from both the
+callback and the forwarded command.
 
 Screenshots taken this way are live in every state and, like native games,
 don't include the Steam UI in the shot. One limitation: if the player

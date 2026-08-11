@@ -46,13 +46,43 @@ fn activate_overlay(state: tauri::State<'_, SteamState>) -> bool {
 /// process, so Steam's hook only sees it while the overlay is open (the
 /// decoy window holds focus then). The page forwards it here;
 /// TriggerScreenshot fires the hooked ScreenshotRequested callback.
+/// Capture the game live and hand it to Steam's screenshot library. Shared
+/// by both screenshot triggers: Steam's ScreenshotRequested callback
+/// (overlay open — Steam's hook sees F12) and the frontend F12 forward
+/// (overlay closed — only the page sees F12).
+fn capture_and_add_screenshot(client: &steamworks::Client, app: &tauri::AppHandle) -> bool {
+    let Some(shot) = tauri_plugin_steam_overlay_surface::capture_screenshot_png(app) else {
+        log::warn!("screenshot capture failed");
+        return false;
+    };
+    match client.screenshots().add_screenshot_to_library(
+        &shot.path,
+        None,
+        shot.width as i32,
+        shot.height as i32,
+    ) {
+        Ok(handle) => {
+            log::info!("screenshot added to Steam library (handle {handle:?})");
+            true
+        }
+        Err(err) => {
+            log::warn!("add_screenshot_to_library failed ({err})");
+            false
+        }
+    }
+}
+
+/// F12 has the same routing problem as Shift+Tab: it lands in the webview
+/// process, so Steam's hook only sees it while the overlay is open. The
+/// page forwards it here. NOTE: this captures directly instead of calling
+/// TriggerScreenshot — with hooking enabled, TriggerScreenshot never
+/// delivered a ScreenshotRequested callback (verified live 2026-08-11).
 #[tauri::command]
-fn trigger_screenshot(state: tauri::State<'_, SteamState>) -> bool {
+fn trigger_screenshot(app: tauri::AppHandle, state: tauri::State<'_, SteamState>) -> bool {
     let Some(client) = state.0.as_ref() else {
         return false;
     };
-    client.screenshots().trigger_screenshot();
-    true
+    capture_and_add_screenshot(client, &app)
 }
 
 fn main() {
@@ -103,25 +133,16 @@ fn main() {
                 // swapchain's backbuffer, which never contains the game (the
                 // decoy presents nothing while the overlay is closed). Hook
                 // them and hand Steam a live PrintWindow frame instead.
+                // ScreenshotRequested fires when Steam's input hook sees F12,
+                // which only happens while the overlay is open (the decoy
+                // holds focus); the overlay-closed case is the frontend
+                // forward → trigger_screenshot command.
                 client.screenshots().hook_screenshots(true);
                 let handle = app.handle().clone();
                 let shot_client = client.clone();
                 let cb = client.register_callback(
                     move |_: steamworks::screenshots::ScreenshotRequested| {
-                        let Some(shot) =
-                            tauri_plugin_steam_overlay_surface::capture_screenshot_png(&handle)
-                        else {
-                            log::warn!("screenshot capture failed; F12 dropped");
-                            return;
-                        };
-                        if let Err(err) = shot_client.screenshots().add_screenshot_to_library(
-                            &shot.path,
-                            None,
-                            shot.width as i32,
-                            shot.height as i32,
-                        ) {
-                            log::warn!("add_screenshot_to_library failed ({err})");
-                        }
+                        capture_and_add_screenshot(&shot_client, &handle);
                     },
                 );
                 std::mem::forget(cb);
