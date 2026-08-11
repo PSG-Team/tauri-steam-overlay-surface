@@ -63,7 +63,10 @@
   <body>
     <main>
       <h1>Steam Overlay Surface</h1>
-      <p>Press <kbd>Shift</kbd> + <kbd>Tab</kbd> to open the Steam overlay.</p>
+      <p>
+        Press <kbd>Shift</kbd> + <kbd>Tab</kbd> to open the Steam overlay,
+        <kbd>F12</kbd> for a Steam screenshot.
+      </p>
       <dl>
         <dt>Steam client</dt>
         <dd id="steam">…</dd>
@@ -99,12 +102,16 @@
       refresh();
       setInterval(refresh, 1000);
 
-      // Shift+Tab lands in the webview process, invisible to Steam's input
-      // hooks — forward it to Rust, which calls ActivateGameOverlay.
+      // Shift+Tab and F12 land in the webview process, invisible to Steam's
+      // input hooks — forward them to Rust (ActivateGameOverlay /
+      // TriggerScreenshot).
       window.addEventListener("keydown", (e) => {
         if (e.shiftKey && e.key === "Tab") {
           e.preventDefault();
           invoke("activate_overlay");
+        } else if (e.key === "F12") {
+          e.preventDefault();
+          invoke("trigger_screenshot");
         }
       });
     </script>

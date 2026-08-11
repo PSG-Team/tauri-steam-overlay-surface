@@ -112,14 +112,18 @@ fn main() {
 }
 ```
 
-One piece belongs in your **frontend**: the Shift+Tab chord lands in the
-webview process, which Steam's input hooks never see. Forward it:
+One piece belongs in your **frontend**: keystrokes land in the webview
+process, which Steam's input hooks never see. That affects both Shift+Tab
+and F12, so forward them:
 
 ```js
 window.addEventListener("keydown", (e) => {
   if (e.shiftKey && e.key === "Tab") {
     e.preventDefault();
-    invoke("activate_overlay"); // your command calling activate_game_overlay("")
+    invoke("activate_overlay");    // your command calling activate_game_overlay("")
+  } else if (e.key === "F12") {
+    e.preventDefault();
+    invoke("trigger_screenshot");  // your command calling screenshots().trigger_screenshot()
   }
 });
 ```
@@ -151,18 +155,30 @@ with the overlay closed the plugin doesn't present at all, and with it open
 the buffer holds the frozen backdrop snapshot. This is a consequence of the
 decoy design and behaves the same on every Windows version.
 
-The fix is Steam's built-in alternative for games like this:
+The fix has two halves:
+
+**1. Hooked screenshots** (step 4 of [Usage](#usage)):
 `ISteamScreenshots::HookScreenshots(true)`. Steam then sends the game a
-`ScreenshotRequested` callback on F12 instead of reading the backbuffer, and
-the game supplies the image. The plugin's `capture_screenshot_png` takes a
-live capture of your main window (`PrintWindow`, same mechanism as the
-backdrop snapshot, safe to call from the callback pump thread), writes it to
-a temp PNG, and returns the path and dimensions for
-`add_screenshot_to_library`. Step 4 of [Usage](#usage) wires it up; old temp
-files are cleaned up on later captures.
+`ScreenshotRequested` callback instead of reading the backbuffer, and the
+game supplies the image. The plugin's `capture_screenshot_png` takes a live
+capture of your main window (`PrintWindow`, same mechanism as the backdrop
+snapshot, safe to call from the callback pump thread), writes it to a temp
+PNG, and returns the path and dimensions for `add_screenshot_to_library`.
+Old temp files are cleaned up on later captures.
+
+**2. Forwarding F12 from the frontend** (the JS snippet in
+[Usage](#usage)): F12 has the same routing problem as Shift+Tab — it lands
+in the webview process, so Steam's input hook only sees it while the overlay
+is open (the decoy window holds keyboard focus then). With the overlay
+closed, F12 must be forwarded to a command that calls
+`screenshots().trigger_screenshot()`, which fires the same
+`ScreenshotRequested` callback a native F12 would.
 
 Screenshots taken this way are live in every state and, like native games,
-don't include the Steam UI in the shot.
+don't include the Steam UI in the shot. One limitation: if the player
+rebinds Steam's screenshot key, the frontend forward still only catches F12
+(Steamworks has no API to query the binding). The rebound key keeps working
+while the overlay is open.
 
 ## Try it (Spacewar example)
 
@@ -252,10 +268,11 @@ fork or vendor this code, keep them:
 - **Semi-transparent overlay pixels** (Steam's dim layer) may blend slightly
   differently than native, since Steam renders unpremultiplied alpha.
   Cosmetic; panels are opaque and unaffected.
-- **F12 screenshots need the hooked-screenshots wiring** (step 4 of
-  [Usage](#usage)). Without it, Steam reads the decoy's backbuffer, which
-  never contains the game: no screenshot with the overlay closed, a stale
-  frozen frame with it open. See [Steam screenshots (F12)](#steam-screenshots-f12).
+- **F12 screenshots need both the hooked-screenshots wiring and the
+  frontend F12 forward** (step 4 and the JS snippet in [Usage](#usage)).
+  Without them, Steam reads the decoy's backbuffer, which never contains
+  the game: no screenshot with the overlay closed, a stale frozen frame
+  with it open. See [Steam screenshots (F12)](#steam-screenshots-f12).
 - **One click needed after alt-tab.** After alt-tabbing back into the game,
   the Shift+Tab forwarder is deaf until the player clicks the page once.
   Windows re-activates the native window without returning keyboard focus

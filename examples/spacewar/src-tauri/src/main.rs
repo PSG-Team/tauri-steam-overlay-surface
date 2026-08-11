@@ -42,6 +42,19 @@ fn activate_overlay(state: tauri::State<'_, SteamState>) -> bool {
     true
 }
 
+/// F12 has the same routing problem as Shift+Tab: it lands in the webview
+/// process, so Steam's hook only sees it while the overlay is open (the
+/// decoy window holds focus then). The page forwards it here;
+/// TriggerScreenshot fires the hooked ScreenshotRequested callback.
+#[tauri::command]
+fn trigger_screenshot(state: tauri::State<'_, SteamState>) -> bool {
+    let Some(client) = state.0.as_ref() else {
+        return false;
+    };
+    client.screenshots().trigger_screenshot();
+    true
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
@@ -68,7 +81,11 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_steam_overlay_surface::init())
         .manage(SteamState(steam))
-        .invoke_handler(tauri::generate_handler![overlay_status, activate_overlay])
+        .invoke_handler(tauri::generate_handler![
+            overlay_status,
+            activate_overlay,
+            trigger_screenshot
+        ])
         .setup(|app| {
             use tauri::Manager;
             let state = app.state::<SteamState>();

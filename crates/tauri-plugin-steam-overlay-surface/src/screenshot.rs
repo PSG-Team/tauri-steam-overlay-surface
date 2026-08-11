@@ -8,6 +8,11 @@
 //! `ISteamScreenshots::HookScreenshots(true)` makes Steam fire a
 //! `ScreenshotRequested` callback instead, and the app hands Steam a live
 //! frame captured here via PrintWindow (same path as the backdrop snapshot).
+//!
+//! F12 itself must also be forwarded from the frontend (like Shift+Tab):
+//! the key lands in the webview process, so Steam's input hook only sees it
+//! while the overlay is open. The app's forwarded command calls
+//! `TriggerScreenshot`, which fires the same `ScreenshotRequested` callback.
 
 use std::fs::File;
 use std::io::BufWriter;
