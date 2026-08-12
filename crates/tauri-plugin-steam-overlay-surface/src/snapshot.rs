@@ -173,9 +173,9 @@ pub(crate) fn capture_main_snapshot<R: Runtime>(main: &Window<R>) {
             slot.data = Some(snap);
             slot.dirty = true;
         }
-        None => log::warn!(
-            "steam-overlay-surface: snapshot capture failed; backdrop stays transparent"
-        ),
+        None => {
+            log::warn!("steam-overlay-surface: snapshot capture failed; backdrop stays transparent")
+        }
     }
 }
 
